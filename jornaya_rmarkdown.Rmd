@@ -1,0 +1,255 @@
+---
+author: "Sayan Chakraborti"
+title: "Conshy Insurance Project"
+output:
+  rmarkdown::html_document:
+    theme: darkly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction and Business Understanding
+
+The goal of my assignment will be to convince Conshy Insurance to buy
+Jornaya datasets and analytics tools. My analytical process is as follows...
+
+1) Business Understanding
+2) Data Preparation
+3) Exploratory Data Analysis with Plots
+4) Building Models
+5) Evaluating Model Accuracy
+
+```{r echo = T, results = 'hide', warning=FALSE, message=FALSE}
+library(rmarkdown)
+library(Amelia)
+library(ggplot2)
+library(corrplot)
+library(caTools)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(pROC)
+```
+
+From here I will import the csv and see the summary and structure of
+the dataset in order to see what columns to focus on and why.
+```{r}
+df<- read.csv('client_leads_with_outcomes.csv')
+head(df)
+summary(df)
+str(df)
+```
+
+Conshy may want to know how much they are paying for their total leads and what percentage of those leads convert to a purchase. Knowing these pain points for the business will help in order to sell Jornaya Services. 
+```{r}
+# get total lead_cost in order to convince Conshy on buying jornaya
+sum(df$lead_cost)
+# get percentage where purchase=1 for purchase column
+summary(factor(df$purchase))
+29/560
+```
+
+We see here that Conshy has paid a total of 30225 dollars for leads and has only converted around 5% of these leads into purchases.
+
+Next I use a barplot to visualize 'lead_costs' by 'purchases'. We can see by looking at the plow below that the proportion of purchases for more expensive 'lead_costs' isn't very good either. There has to be a better way of acquiring leads.
+
+```{r}
+# plot distrubution of 'lead_cost' with 'purchase' as factor
+pl_purchase_dist<-  ggplot(df, aes(x=lead_cost))+
+  geom_bar(color='black',aes(fill=factor(purchase)))+ 
+  scale_x_continuous(breaks = c(25,50,75,100))+
+  ggtitle('Lead costs and proportion of purchases')
+print(pl_purchase_dist)
+```
+
+
+After researching how much money marketing companies put into acquiring leads I realize that the two most important question I will be attempting to solve are...
+
+How can I find consumers who are likely to purchase?
+
+How do I find which consumers are not likely to purchase?
+
+## Data Preparation
+Here I drop the 'token' column because it's pretty much a duplicate of the index and check for NA values in the dataset. I also use a Missingness Map in order to further check for data to clean. The data seems clean so no further cleaning such as omission or imputation based methods will be needed.
+
+```{r results = 'hide'}
+# drop the token column
+df<- df[,-1]
+```
+```{r}
+# Check to see if dataset needs cleaning
+any(is.na(df))
+missmap(df,y.at=c(1),col=c('yellow','black'))
+```
+
+## Exploratory Data Analysis and Graphics
+Jornaya appended the columns 'lead_age', 'lead_duration', 'field_count' and 'competitors'. It is important to sell the importance of using Jornaya datasets and my plots will show insights that were not available just using Conshy's dataset.
+
+
+The following heatmap shows a massive cluster of purchases using the 'lead_age' and 'lead_duration' columns at the lower left side of the plot. For my business recommendation I would say focus on the cluster with...
+
+0 < lead_age < 100
+
+0 < lead_duration < 1000 
+
+Within this cluster we have a relatively high probability of finding consumers that will convert to a purchase compared to all other consumers. It is not worth pursuing consumers out of this range for these two variables as they are likely to not convert into a purchase.
+
+Also this plot gives me the initial intuition that 'lead_duration' may be an important variable to investigate further.
+
+```{r}
+pl_1_purchase <- ggplot(df,aes(x = lead_age,y=lead_duration))+
+  geom_density_2d_filled(bins=6,show.legend = F, aes(color=purchase))+
+  ggtitle('Heatmap of Purchase for Lead Age vs Lead Duration')
+print(pl_1_purchase)
+```
+
+The next plot has the same variables as the one before but focuses only on the subset of my df when 'lead_cost<=50'. I wanted to show Conshy that by using Jornaya data that they could find "Best Value Leads" that didn't cost much money but would most likely convert into a purchase. On the job this would be the plot that I would present to Conshy in real life because the chart helps show the value using Jornaya's datasets.
+```{r}
+df_bestvalueleads <-df[df$lead_cost<=50,]
+str(df_bestvalueleads)
+pl_1_purchase_bestvalue <- ggplot(df_bestvalueleads,aes(x = lead_age,y=lead_duration))+
+  geom_density_2d_filled(bins=6,show.legend = F, aes(color=purchase))+
+  ggtitle('Best Value Leads (lead_cost<=50): 
+          Heatmap of Purchase for Lead Age vs Lead Duration')
+print(pl_1_purchase_bestvalue)
+```
+
+For the following plots I noticed a very important trend. The plots with important clusters often appear in plots using 'lead_duration'. This variable seems very important and I carried this information into my Model building stage as I knew focus on the 'lead_duration' variable.
+
+```{r}
+pl_2_purchase <- ggplot(df,aes(x = lead_age,y=field_count))+
+  geom_density_2d_filled(bins=6,show.legend = F,aes(color=purchase))+
+  ggtitle("pl_2_purchase: Heatmap of Purchase for Lead Age vs Field Count")
+print(pl_2_purchase)
+pl_3_purchase <- ggplot(df,aes(x = lead_age,y=competitors))+
+  geom_density_2d_filled(bins=6,show.legend = F,aes(color=purchase))+
+  ggtitle("pl_3_purchase: Heatmap of Purchase for Lead Age vs Competitors")
+print(pl_3_purchase)
+pl_4_purchase <- ggplot(df,aes(x = lead_duration,y=field_count))+
+  geom_density_2d_filled(bins=6,show.legend = F,aes(color=purchase))+
+  ggtitle("pl_4_purchase: Heatmap of Purchase for Lead Duration vs Field Count")
+print(pl_4_purchase)
+pl_5_purchase <- ggplot(df,aes(x = lead_duration,y=competitors))+
+  geom_density_2d_filled(bins=6,show.legend = F,aes(color=purchase))+
+  ggtitle("pl_5_purchase: Heatmap of Purchase for Lead Duration vs Competitors")
+print(pl_5_purchase)
+pl_6_purchase <- ggplot(df,aes(x = field_count,y=competitors))+
+  geom_density_2d_filled(bins=6,show.legend = F,aes(color=purchase))+
+  ggtitle("pl_6_purchase: Heatmap of Purchase for Field Count vs Competitors")
+print(pl_6_purchase)
+```
+
+## Model Building
+
+Before I build my models I will be importing the data again and will be using a colored correlation matrix to get a general idea of the relationship between different variables.
+
+```{r}
+df<- read.csv('client_leads_with_outcomes.csv')
+df<- df[,-1]
+# get only numerical column to build correlation matrix
+num.cols <- sapply(df, is.numeric)
+cor.data <- cor(df[,num.cols])
+corrplot(cor.data,method='color')
+# linear reg wont work for this dataset so we move onto
+# binary classification algorithms
+```
+I can see from this correlation plot at strong negative correlation between 'lead_cost' and 'lead_duration' also I see a strong positive correlation between 'contact' and 'purchase'. I will not be focusing on these at the time but in further later analysis these may be useful.
+
+Now I will split my train and test datasets. Kyle and Nate told me in past interview that they mostly used a 80/20 split at work so I used that here.
+```{r}
+set.seed(101) 
+sample <- sample.split(df$purchase, SplitRatio = 0.80)
+train = subset(df, sample == TRUE)
+test = subset(df, sample == FALSE)
+```
+
+Since I will be focusing on the 'purchase' column for this project. I will be using binary classification models such as...
+
+1) Logistic Regression
+2) Decision Tree
+3) Random Forest
+
+# LOGISTIC MODEL
+I will be training my Logistic Model and will be testing its accuracy using my test dataset. I will evaluate its accuracy using a confusion matrix. The accuracy is calculated as the sum(diagonal elements)/sum(total elements) and I will be outputting that and comparing in my model evaluation phase.
+
+Looking at the summary we see that 'lead_duration' is the only statistically significant variable for the model.
+```{r}
+# LOGISTIC MODEL
+logistic.model <- glm(purchase ~ ., family = binomial(logit), 
+                     data = train)
+summary(logistic.model)
+logistic.model.preds <-  predict(logistic.model, test)
+
+# evaluate accuracy from confusion matrix
+table1<-table(test$purchase, logistic.model.preds > 0.5)
+table1
+# parse confusion matrix and get TP, TN, FP, FN
+table1<-as.data.frame(table1)
+# accuracy = (TP+TN)/(TP+TN+FP+FN)
+logistic.model.accuracy<- (table1[,'Freq'][1]+table1[,'Freq'][4])/
+  (table1[,'Freq'][1]+table1[,'Freq'][4]+table1[,'Freq'][2]+table1[,'Freq'][3])
+
+```
+
+# DECISION TREE MODEL
+The next model that I will be using is a decision tree for binary classification. The labeled diagram displays the nodes and edges for my decision tree. Also we see based on my diagram that 'lead_duration' plays a strong role for my model.
+```{r}
+# DECISION TREE
+tree.model <- rpart(purchase ~ .,   data=train)
+# plot the tree model with labels
+prp(tree.model)
+tree.model.preds<-predict(tree.model, test)
+table2<-table(test$purchase, tree.model.preds > 0.5)
+table2
+# parse confusion matrix and get TP, TN, FP, FN
+table2<-as.data.frame(table2)
+# accuracy = (TP+TN)/(TP+TN+FP+FN)
+tree.model.accuracy<- (table2[,'Freq'][1]+table2[,'Freq'][4])/
+  (table2[,'Freq'][1]+table2[,'Freq'][4]+table2[,'Freq'][2]+table2[,'Freq'][3])
+
+```
+
+# RANDOM FOREST
+The next model that I will be using is a Random Forest for binary classification.
+```{r}
+# RANDOM FOREST
+forest.model <- randomForest(purchase ~ .,   data=train)
+forest.model.preds<-predict(forest.model, test)
+table3<-table(test$purchase, forest.model.preds > 0.5)
+table3
+# parse confusion matrix and get TP, TN, FP, FN
+table3<-as.data.frame(table3)
+# accuracy = (TP+TN)/(TP+TN+FP+FN)
+forest.model.accuracy<- (table3[,'Freq'][1]+table3[,'Freq'][4])/
+  (table3[,'Freq'][1]+table3[,'Freq'][4]+table3[,'Freq'][2]+table3[,'Freq'][3])
+
+```
+
+## Model Evaluation
+I will be mainly using the accuracy from my confusion matrix to compare models. As you can see the accuracy for all 3 models is fairly similar with logistic and decision tree doing slightly better than random forest. 
+```{r}
+logistic.model.accuracy
+tree.model.accuracy
+forest.model.accuracy
+```
+I will also be comparing my models using ROC curve and AUC. The ROC curve is the main way of evaluating binary classification models that I have learned in the past.
+```{r}
+# COMPARE MODELS USING AUC and ROC for all 3 models
+roc(test$purchase,logistic.model.preds,plot=T, 
+    main='Logistic Model: AUC=0.967', col='red')
+roc(test$purchase, tree.model.preds,plot=T, 
+    main='Decision Tree Model: AUC =0.9772', col='red')
+roc(test$purchase, forest.model.preds,plot=T, 
+    main='Random Forest Model: AUC=0.9575',col='red')
+```
+
+## Conclusion
+My heatmap comparing 'lead_age' and 'lead_duration' has a large cluster that can be helpful to identify potential customers that are likely to purchase insurance from Conshy.
+
+Out of my three models I would choose the logistic regression because it is the simplest of the models. The AUC and the accuracy for my models are all fairly similar so I would be confident for putting my logistic regression model into production. 
+
+Conshy Insurance is losing a lot of money from marketing to leads that didn't purchase their insurance. By using my models that are based on Jornaya datasets, Conshy Insurance could save several thousands of dollars in lead costs by focusing on the leads that are likely to purchase their insurance. 
+
+My heatmap plot and all three of my models have been highly reliant on 'lead_duration'. Jornaya in real life seems like a company that is heavily reliant on nailing the 'timing' part of major purchase marketing.
