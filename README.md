@@ -9,7 +9,7 @@ https://rpubs.com/SayanChakraborti/776038
 If you are interested in just looking at the code for my project look in this repository for:
 jornaya_rawcode.R
 
-If you are interest in looking at my RMarkdown file itself look in this repository for:
+If you are interested in looking at my RMarkdown file itself look in this repository for:
 jornaya_rmarkdown.Rmd
 
 
